@@ -22,6 +22,7 @@ import os
 import sys
 import json
 import csv
+import time
 import argparse
 from datetime import datetime, timedelta
 import urllib.request
@@ -61,7 +62,7 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def fetch_page(token, date_from, date_to, page_number):
+def fetch_page(token, date_from, date_to, page_number, max_retries=4):
     params = {
         "token": token,
         "DateFrom": date_from,
@@ -72,14 +73,35 @@ def fetch_page(token, date_from, date_to, page_number):
     }
     url = API_BASE + "/transactions?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = resp.read().decode("utf-8")
-            return json.loads(body)
-    except urllib.error.HTTPError as e:
-        sys.exit(f"Ошибка HTTP {e.code} при запросе к Vendista API: {e.read().decode('utf-8', 'ignore')}")
-    except urllib.error.URLError as e:
-        sys.exit(f"Не удалось подключиться к Vendista API: {e.reason}")
+
+    wait = 20
+    for attempt in range(1, max_retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", "ignore")
+            if e.code == 429 and attempt < max_retries:
+                print(f"429 Too Many Requests — жду {wait} сек и пробую снова "
+                      f"(попытка {attempt}/{max_retries})...", file=sys.stderr)
+                time.sleep(wait)
+                wait *= 2
+                continue
+            if e.code == 429:
+                # Не роняем весь workflow из-за временного лимита — просто пропускаем этот запуск,
+                # следующий по расписанию прогон подхватит данные с той же точки (state.json не обновится).
+                print(f"429 Too Many Requests — лимит не снялся после {max_retries} попыток. "
+                      f"Пропускаю этот запуск, попробую в следующий раз.", file=sys.stderr)
+                sys.exit(0)
+            sys.exit(f"Ошибка HTTP {e.code} при запросе к Vendista API: {body}")
+        except urllib.error.URLError as e:
+            if attempt < max_retries:
+                print(f"Сетевая ошибка ({e.reason}) — жду {wait} сек и пробую снова...", file=sys.stderr)
+                time.sleep(wait)
+                wait *= 2
+                continue
+            sys.exit(f"Не удалось подключиться к Vendista API: {e.reason}")
 
 
 def fetch_all_transactions(token, date_from, date_to):
