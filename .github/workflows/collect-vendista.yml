@@ -1,0 +1,37 @@
+name: Собрать транзакции Vendista
+
+on:
+  schedule:
+    # каждый день в 06:00 UTC (09:00 по Москве)
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}   # можно запустить вручную кнопкой в GitHub
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run collector
+        env:
+          VENDISTA_TOKEN: ${{ secrets.VENDISTA_TOKEN }}
+        run: |
+          mkdir -p data
+          python3 vendista_collector.py --out data/transactions.csv --keep-days 90
+
+      - name: Commit updated data
+        run: |
+          git config user.name "vendista-bot"
+          git config user.email "actions@github.com"
+          git add data/transactions.csv state.json
+          git diff --quiet --cached || git commit -m "Обновление данных Vendista $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
