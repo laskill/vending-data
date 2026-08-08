@@ -4,7 +4,16 @@ on:
   schedule:
     # каждый день в 06:00 UTC (09:00 по Москве)
     - cron: '0 6 * * *'
-  workflow_dispatch: {}   # можно запустить вручную кнопкой в GitHub
+  workflow_dispatch:
+    inputs:
+      date_from:
+        description: 'Дата начала (YYYY-MM-DD HH:MM:SS) — оставьте пустым для обычного инкрементального запуска'
+        required: false
+        default: ''
+      date_to:
+        description: 'Дата конца (YYYY-MM-DD HH:MM:SS) — оставьте пустым для "сейчас"'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -26,7 +35,14 @@ jobs:
           VENDISTA_TOKEN: ${{ secrets.VENDISTA_TOKEN }}
         run: |
           mkdir -p data
-          python3 vendista_collector.py --out data/transactions.csv --keep-days 90
+          ARGS="--out data/transactions.csv --keep-days 90"
+          if [ -n "${{ github.event.inputs.date_from }}" ]; then
+            ARGS="$ARGS --from \"${{ github.event.inputs.date_from }}\""
+          fi
+          if [ -n "${{ github.event.inputs.date_to }}" ]; then
+            ARGS="$ARGS --to \"${{ github.event.inputs.date_to }}\""
+          fi
+          eval python3 vendista_collector.py $ARGS
 
       - name: Commit updated data
         run: |
