@@ -68,8 +68,8 @@ def fetch_page(token, date_from, date_to, page_number, max_retries=4):
         "DateFrom": date_from,
         "DateTo": date_to,
         "OrderDesc": "false",
-        "page_number": page_number,
-        "items_per_page": 500,
+        "PageNumber": page_number,     # PascalCase — как DateFrom/DateTo/TermId, не page_number
+        "ItemsPerPage": 50,            # сервер всё равно режет по 50, но параметр пусть будет явным
     }
     url = API_BASE + "/transactions?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
@@ -106,14 +106,27 @@ def fetch_page(token, date_from, date_to, page_number, max_retries=4):
 
 def fetch_all_transactions(token, date_from, date_to):
     all_items = []
+    seen_ids = set()
     page = 1
     while True:
         data = fetch_page(token, date_from, date_to, page)
         if not data.get("success", True) and "items" not in data:
             sys.exit(f"API вернул ошибку: {data}")
         items = data.get("items", [])
-        all_items.extend(items)
-        items_per_page = data.get("items_per_page", 500)
+        if not items:
+            break
+        new_count = 0
+        for it in items:
+            iid = it.get("id")
+            if iid not in seen_ids:
+                seen_ids.add(iid)
+                all_items.append(it)
+                new_count += 1
+        items_per_page = data.get("items_per_page", 50)
+        if new_count == 0:
+            # страница вернула только уже виденные записи — параметр страницы не сработал, дальше листать бессмысленно
+            print("Внимание: страница не дала новых записей — похоже, сервер игнорирует номер страницы.", file=sys.stderr)
+            break
         if len(items) < items_per_page:
             break
         page += 1
