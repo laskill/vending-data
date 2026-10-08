@@ -67,7 +67,7 @@ def fetch_page(token, date_from, date_to, page_number, max_retries=4):
         "token": token,
         "DateFrom": date_from,
         "DateTo": date_to,
-        "OrderDesc": "false",
+        "OrderDesc": "true",       # если упрёмся в лимит страниц — потеряем старые записи, а не свежие
         "PageNumber": page_number,     # PascalCase — как DateFrom/DateTo/TermId, не page_number
         "ItemsPerPage": 50,            # сервер всё равно режет по 50, но параметр пусть будет явным
     }
@@ -149,9 +149,9 @@ def row_from_item(it):
     ]
 
 
-def write_csv_append_dedupe(items, out_path, keep_days=90):
-    """Merge new items into an existing rolling CSV, de-duplicated by ID транзакции,
-    and drop rows older than keep_days so the file doesn't grow forever."""
+def write_csv_append_dedupe(items, out_path, keep_days=None):
+    """Merge new items into the CSV, de-duplicated by ID транзакции.
+    keep_days=None (по умолчанию) — хранить ВСЮ историю; число — отбрасывать строки старше N дней."""
     header = ["ID транзакции", "Дата и время", "TID", "ID терминала", "Сумма, ₽", "Статус"]
     existing = {}
     if os.path.exists(out_path):
@@ -167,15 +167,16 @@ def write_csv_append_dedupe(items, out_path, keep_days=90):
         row = row_from_item(it)
         existing[row[0]] = row
 
-    cutoff = datetime.now() - timedelta(days=keep_days)
-
     def row_date(r):
         try:
             return datetime.strptime(r[1][:19], "%Y-%m-%d %H:%M:%S")
         except Exception:
             return datetime.now()
 
-    all_rows = [r for r in existing.values() if row_date(r) >= cutoff]
+    all_rows = list(existing.values())
+    if keep_days is not None:
+        cutoff = datetime.now() - timedelta(days=keep_days)
+        all_rows = [r for r in all_rows if row_date(r) >= cutoff]
     all_rows.sort(key=row_date)
 
     with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
@@ -191,7 +192,7 @@ def main():
     parser.add_argument("--from", dest="date_from", help="Дата начала YYYY-MM-DD (по умолчанию: с последнего запуска)")
     parser.add_argument("--to", dest="date_to", help="Дата конца YYYY-MM-DD (по умолчанию: сейчас)")
     parser.add_argument("--out", dest="out", required=True, help="Путь к выходному CSV (данные дописываются и дедуплицируются)")
-    parser.add_argument("--keep-days", dest="keep_days", type=int, default=90, help="Сколько дней истории хранить в файле (по умолчанию 90)")
+    parser.add_argument("--keep-days", dest="keep_days", type=int, default=None, help="Сколько дней истории хранить (по умолчанию — вся история, без обрезки)")
     args = parser.parse_args()
 
     token = get_token()
