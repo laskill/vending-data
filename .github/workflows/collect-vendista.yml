@@ -35,7 +35,7 @@ jobs:
           VENDISTA_TOKEN: ${{ secrets.VENDISTA_TOKEN }}
         run: |
           mkdir -p data
-          ARGS="--out data/transactions.csv --keep-days 90"
+          ARGS="--out data/transactions.csv"
           if [ -n "${{ github.event.inputs.date_from }}" ]; then
             ARGS="$ARGS --from \"${{ github.event.inputs.date_from }}\""
           fi
